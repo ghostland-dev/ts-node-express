@@ -33,7 +33,7 @@ model Utilisateur {
 model Commande {
   id            Int               @id @default(autoincrement())
   date          DateTime          @default(now())
-  utilisateur   Utilisateur       @relation(fields: [utilisateurId], references: [id],  onDelete: Cascade, onUpdate: Cascade)
+  utilisateur   Utilisateur       @relation(fields: [utilisateurId], references: [id], onUpdate: Cascade)
   utilisateurId Int
   produits      ProduitCommande[]
 }

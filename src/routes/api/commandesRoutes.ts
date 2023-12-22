@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import prisma from '../../db/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, Produit, ProduitCommande } from '@prisma/client';
 
 const router = express.Router();
 
@@ -31,46 +31,121 @@ router.get('/commandes/liste', handleErrors(async (req: any, res: { json: (arg0:
 }));
 
 router.get('/commandes/:id', validateIdParam, handleErrors(async (req: { params: { id: any; }; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { erreur: string; }): void; new(): any; }; }; json: (arg0: { id: number; date: Date; utilisateurId: number; }) => void; }) => {
-  const commande = await prisma.commande.findUnique({
-    where: {
-      id: parseInt(req.params.id),
-    },
-    include: {
-      produits: true, // inclut les produits liés à la commande
-      utilisateur: true,
-    },
-  });
-  if (!commande) {
-    res.status(404).json({ erreur: 'Commande non trouvée' });
-  } else {
-    res.json(commande);
+  try {
+    const commande = await prisma.commande.findUnique({
+      where: {
+        id: parseInt(req.params.id),
+      },
+      include: {
+        produits: true, // inclut les produits liés à la commande
+        utilisateur: true,
+      },
+    });
+    if (!commande) {
+      res.status(404).json({ erreur: 'Commande non trouvée' });
+    } else {
+      res.json(commande);
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ erreur: 'Erreur interne du serveur' });
   }
 }));
 
-router.post('/commandes', handleErrors(async (req: { body: any; }, res: { json: (arg0: { id: number; date: Date; utilisateurId: number; }) => void; }) => {
-  const nouvelleCommande = await prisma.commande.create({
-    data: req.body,
-  });
-  res.json(nouvelleCommande);
+router.post('/commandes', handleErrors(async (req: { body: any; }, res: {
+  [x: string]: any; json: (arg0: { id: number; date: Date; utilisateurId: number; }) => void;
+}) => {
+  const { date, utilisateurId, produits } = req.body;
+
+  try {
+    const nouvelleCommande = await prisma.commande.create({
+      data: {
+        date,
+        utilisateurId,
+        produits: {
+          create: produits.map((produit: { quantite: any; produitId: any; }) => ({
+            quantite: produit.quantite,
+            produit: { connect: { id: produit.produitId } },
+          })),
+        },
+      },
+      include: {
+        produits: {
+          include: {
+            produit: true,
+          },
+        },
+      },
+    });
+
+    res.json(nouvelleCommande);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ erreur: 'Erreur interne du serveur' });
+  }
 }));
 
-router.put('/commandes/:id', validateIdParam, handleErrors(async (req: { params: { id: any; }; body: any; }, res: { json: (arg0: { id: number; date: Date; utilisateurId: number; }) => void; }) => {
-  const commandeModifiee = await prisma.commande.update({
-    where: {
-      id: parseInt(req.params.id),
-    },
-    data: req.body,
-  });
-  res.json(commandeModifiee);
-}));
+router.put('/commandes/:id', validateIdParam, async (req: Request, res: Response) => {
+  try {
+    // Get request data
+    const { utilisateurId, produits } : {utilisateurId:number, produits:Array<ProduitCommande>} =  req.body;
 
-router.delete('/commandes/:id', validateIdParam, handleErrors(async (req: { params: { id: any; }; }, res: { json: (arg0: { id: number; date: Date; utilisateurId: number; }) => void; }) => {
-  const commandeSupprimee = await prisma.commande.delete({
-    where: {
-      id: req.params.id,
-    },
-  });
-  res.json(commandeSupprimee);
+    // Create correct structure for the `produits` field
+    const produitsUpdateData = produits.map((produit) => ({
+      data: {
+        quantite: produit.quantite,
+        produitId: produit.produitId,
+      },
+      where: {
+        produitId: produit.produitId,
+        commandeId: parseInt(req.params.id), // Use the current commandeId from the URL parameter
+      },
+    }));
+
+    // Perform the update
+    const commandeModifiee = await prisma.commande.update({
+      where: {
+        id: parseInt(req.params.id),
+      },
+      data: {
+        utilisateurId,
+        produits: {
+          updateMany: produitsUpdateData,
+        },
+      },
+      include: {
+        produits: true,
+        utilisateur: true,
+      },
+    });
+
+    res.json(commandeModifiee);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ erreur: 'Erreur interne du serveur' });
+  }
+});
+
+
+
+router.delete('/commandes/:id', validateIdParam, handleErrors(async (req: { params: { id: any; }; }, res: {
+  [x: string]: any; json: (arg0: { id: number; date: Date; utilisateurId: number; }) => void;
+}) => {
+  try {
+    const commandeSupprimee = await prisma.commande.delete({
+      where: {
+        id: parseInt(req.params.id),
+      },
+    });
+    if (!commandeSupprimee) {
+      res.status(404).json({ erreur: 'Commande non trouvée' });
+    } else {
+      res.status(204).json({ messgae: " La Commande supprimée avec succès" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ erreur: 'Erreur interne du serveur' });
+  }
 }));
 
 export default router;

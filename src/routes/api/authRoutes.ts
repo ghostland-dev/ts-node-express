@@ -7,72 +7,76 @@ import prisma from '../../db/config';
 const router = express.Router();
 
 router.post('/inscription', async (req: Request, res: Response) => {
-  const { nom, prenom, email, motDePasse } = req.body;
-  const hashedPassword = await bcrypt.hash(motDePasse, 10);
-try {
-  
-  if (!nom || !prenom || !email || !motDePasse) {
-    return res.status(400).json({
-      codeStatus: 400,
-      message: 'veuillez remplir tous les champs',
+  try {
+    const { nom, prenom, email, motDePasse } = req.body;
+    const hashedPassword = await bcrypt.hash(motDePasse, 10);
+
+    if (!nom || !prenom || !email || !motDePasse) {
+      return res.status(400).json({
+        codeStatus: 400,
+        message: 'Veuillez remplir tous les champs',
+      });
+    }
+
+    const utilisateurExist = await prisma.utilisateur.findUnique({
+      where: {
+        email,
+      },
+    });
+    if (utilisateurExist) {
+      return res.status(400).json({
+        codeStatus: 400,
+        message: 'Veuillez réessayer avec un autre email',
+      });
+    }
+
+    const nouveauUtilisateur = await prisma.utilisateur.create({
+      data: {
+        nom,
+        prenom,
+        email,
+        motDePasse: hashedPassword,
+      },
+    });
+
+    res.json({ nouveauUtilisateur, message: 'Inscription réussie' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      codeStatus: 500,
+      message: "Une erreur est survenue : " + error,
     });
   }
-
-
-  const utilisateurExist = await prisma.utilisateur.findUnique({
-    where: {
-      email,
-    },
-  });
-  if (utilisateurExist) {
-    return res.status(400).json({
-      codeStatus: 400,
-      message: 'veuillez réessayer avec un autre email',
-    });
-  }
-  
-
-  const nouveauUtilisateur = await prisma.utilisateur.create({
-    data: {
-      nom,
-      prenom,
-      email,
-      motDePasse: hashedPassword,
-
-    },
-  });
-
-
-
-  res.json({ nouveauUtilisateur,  message: 'Inscription réussie' });
-} catch (error) {
-  res.status(500).json({
-    codeStatus: 500,
-    message: "une erreur est survenue : "+error,
-  });  
-}
 });
 
 router.post('/connexion', async (req: Request, res: Response) => {
-  const { email, motDePasse } = req.body;
+  try {
+    const { email, motDePasse } = req.body;
 
-  const utilsiateur = await prisma.utilisateur.findUnique({
-    where: { email },
-  });
+    const utilisateur = await prisma.utilisateur.findUnique({
+      where: { email },
+    });
 
-  if (!utilsiateur || !(await bcrypt.compare(motDePasse, utilsiateur.motDePasse))) {
-    return res.status(401).json({ message: 'Invalid credentials' });
+    if (!utilisateur || !(await bcrypt.compare(motDePasse, utilisateur.motDePasse))) {
+      return res.status(401).json({ message: 'Identifiants invalides' });
+    }
+
+    const accessToken = generateAccessToken(utilisateur.id.toString(), utilisateur.role);
+    const refreshToken = await generateRefreshToken();
+
+    await prisma.utilisateur.update({
+      where: { id: utilisateur.id },
+      data: { refreshToken },
+    });
+
+    res.json({ accessToken: "Bearer " + accessToken, refreshToken: "Bearer " + refreshToken });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      codeStatus: 500,
+      message: "Une erreur est survenue : " + error,
+    });
   }
-
-  const accessToken = generateAccessToken(utilsiateur.id.toString(), utilsiateur.role);
-  const refreshToken = await generateRefreshToken();
-
-  await prisma.utilisateur.update({
-    where: { id: utilsiateur.id },
-    data: { refreshToken },
-  });
-
-  res.json({ accesstoken: "Bearer " + accessToken, refreshToken: "Bearer " + refreshToken });
 });
 
 export default router;
